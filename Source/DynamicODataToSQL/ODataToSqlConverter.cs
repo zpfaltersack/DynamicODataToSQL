@@ -5,6 +5,7 @@ using System.Collections.Generic;
 
 using DynamicODataToSQL.Interfaces;
 
+using Microsoft.OData.Edm;
 using Microsoft.OData.UriParser;
 
 using SqlKata;
@@ -96,7 +97,7 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
 
     private Query BuildSqlKataQueryFromOdataParameters(Query query, string modelName, IDictionary<string, string> odataQuery, bool count, bool tryToParseDates)
     {
-        var parser = GetParser(modelName, odataQuery);
+        var (parser, model) = GetParser(modelName, odataQuery);
 
         var applyClause = parser.ParseApply();
         var filterClause = parser.ParseFilter();
@@ -105,9 +106,11 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
         var orderbyClause = parser.ParseOrderBy();
         var selectClause = parser.ParseSelectAndExpand();
 
+        var columnNameResolver = new ColumnNameResolver(_sqlCompiler, modelName);
+
         if (applyClause != null)
         {
-            query = new ApplyClauseBuilder(_sqlCompiler).BuildApplyClause(query, applyClause, tryToParseDates);
+            query = new ApplyClauseBuilder(_sqlCompiler, columnNameResolver).BuildApplyClause(query, applyClause, tryToParseDates);
             if (filterClause != null || selectClause != null)
             {
                 query = new Query().From(query, "apply");
@@ -116,12 +119,14 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
 
         if (filterClause != null)
         {
-            query = filterClause.Expression.Accept(new FilterClauseBuilder(query, tryToParseDates));
+            query = filterClause.Expression.Accept(new FilterClauseBuilder(query, tryToParseDates, columnNameResolver));
         }
 
         if (count)
         {
             query = query.AsCount();
+
+            query = new JoinClauseBuilder(columnNameResolver.NavigationProperties).BuildJoinClause(query, model, modelName);
         }
         else
         {
@@ -137,18 +142,20 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
 
             if (orderbyClause != null)
             {
-                query = BuildOrderByClause(query, orderbyClause);
+                query = BuildOrderByClause(query, orderbyClause, columnNameResolver);
             }
 
             if (selectClause != null)
             {
-                query = BuildSelectClause(query, selectClause);
+                query = BuildSelectClause(query, selectClause, modelName);
             }
+
+            query = new JoinClauseBuilder(columnNameResolver.NavigationProperties).BuildJoinClause(query, model, modelName);
         }
 
         return query;
     }
-    private ODataQueryOptionParser GetParser(string name, IDictionary<string, string> odataQuery)
+    private (ODataQueryOptionParser, IEdmModel) GetParser(string name, IDictionary<string, string> odataQuery)
     {
         var result = _edmModelBuilder.BuildTableModel(name);
         var model = result.Item1;
@@ -157,7 +164,7 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
         var parser = new ODataQueryOptionParser(model, entityType, entitySet, odataQuery);
         parser.Resolver.EnableCaseInsensitive = true;
         parser.Resolver.EnableNoDollarQueryOptions = true;
-        return parser;
+        return (parser, model);
     }
 
     private (string, IDictionary<string, object>) CompileSqlKataQuery(Query query)
@@ -166,21 +173,21 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
         return (sqlResult.Sql, sqlResult.NamedBindings);
     }
 
-    private static Query BuildOrderByClause(Query query, OrderByClause orderbyClause)
+    private static Query BuildOrderByClause(Query query, OrderByClause orderbyClause, ColumnNameResolver columnNameResolver)
     {
         while (orderbyClause != null)
         {
             var direction = orderbyClause.Direction;
-            var expressionName = GetSingleValuePropertyAccessNodeName(orderbyClause.Expression);
+            var expressionName = columnNameResolver.GetColumnName(orderbyClause.Expression);
             if (expressionName is not null)
             {
                 if (direction == OrderByDirection.Ascending)
                 {
-                    query = query.OrderBy(expressionName.Trim().Replace(SPACESIGNREPLACEMENT, " "));
+                    query = query.OrderBy(expressionName);
                 }
                 else
                 {
-                    query = query.OrderByDesc(expressionName.Trim().Replace(SPACESIGNREPLACEMENT, " "));
+                    query = query.OrderByDesc(expressionName);
                 }
             }
 
@@ -190,22 +197,7 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
         return query;
     }
 
-    private static string GetSingleValuePropertyAccessNodeName(SingleValueNode expression)
-    {
-        if (expression is SingleValueOpenPropertyAccessNode openProperty)
-        {
-            return openProperty.Name;
-        }
-
-        if (expression is SingleValuePropertyAccessNode property)
-        {
-            return property.Property.Name;
-        }
-
-        return null;
-    }
-
-    private static Query BuildSelectClause(Query query, SelectExpandClause selectClause)
+    private static Query BuildSelectClause(Query query, SelectExpandClause selectClause, string tableName)
     {
         if (!selectClause.AllSelected)
         {
@@ -213,7 +205,7 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
             {
                 if (selectItem is PathSelectItem path)
                 {
-                    query = query.Select(path.SelectedPath.FirstSegment.Identifier.Trim().Replace(SPACESIGNREPLACEMENT, " "));
+                    query = query.Select($"{tableName}.{path.SelectedPath.FirstSegment.Identifier.Trim().Replace(SPACESIGNREPLACEMENT, " ")}");
                 }
             }
         }
