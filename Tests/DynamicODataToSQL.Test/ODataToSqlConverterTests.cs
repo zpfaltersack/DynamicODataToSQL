@@ -255,7 +255,7 @@ public class ODataToSqlConverterTests(ITestOutputHelper output)
                 {"filter","date(OrderDate) gt 2001-01-17" }
             };
             var expectedSQL = @"SELECT * FROM [Orders] WHERE CAST([Orders].[OrderDate] as DATE) > @p0";
-            var expectedSQLParams = new Dictionary<string, object> { { "@p0", new Microsoft.OData.Edm.Date(2001, 1, 17) } };
+            var expectedSQLParams = new Dictionary<string, object> { { "@p0", new DateTime(2001, 1, 17) } };
             yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
         }
 
@@ -269,7 +269,7 @@ public class ODataToSqlConverterTests(ITestOutputHelper output)
                 {"filter","time(OrderDate) gt 16:30" }
             };
             var expectedSQL = @"SELECT * FROM [Orders] WHERE CAST([Orders].[OrderDate] as TIME) > @p0";
-            var expectedSQLParams = new Dictionary<string, object> { { "@p0", new Microsoft.OData.Edm.TimeOfDay(16, 30, 0, 0) } };
+            var expectedSQLParams = new Dictionary<string, object> { { "@p0", new TimeSpan(0, 16, 30, 0, 0) } };
             yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
         }
         // Test 14
