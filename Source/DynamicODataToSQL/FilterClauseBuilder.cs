@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 
+using Microsoft.OData.Edm;
 using Microsoft.OData.UriParser;
 
 using SqlKata;
@@ -200,10 +201,10 @@ public class FilterClauseBuilder(Query query, bool tryToParseDates, ColumnNameRe
                 query = query.WhereDatePart(leftNode.Name, columnName, operand, rightValue);
                 break;
             case "DATE":
-                query = query.WhereDate(columnName, operand, rightValue is DateTime date ? date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture.DateTimeFormat) : rightValue);
+                query = query.WhereDate(columnName, operand, rightValue);
                 break;
             case "TIME":
-                query = query.WhereTime(columnName, operand, rightValue is DateTime time ? time.ToString("HH:mm", CultureInfo.InvariantCulture.DateTimeFormat) : rightValue);
+                query = query.WhereTime(columnName, operand, rightValue);
                 break;
             case "TOUPPER":
             case "TOLOWER":
@@ -296,8 +297,20 @@ public class FilterClauseBuilder(Query query, bool tryToParseDates, ColumnNameRe
 
                 return trimedValue;
             }
-
-            return value;
+            else if (value is Date date)
+            {
+                DateTime converted = date;
+                return converted;
+            }
+            else if (value is TimeOfDay timeOfDay)
+            {
+                TimeSpan converted = timeOfDay;
+                return converted;
+            }
+            else
+            {
+                return value;
+            }
         }
         else if (node.Kind == QueryNodeKind.CollectionConstant)
         {
