@@ -529,6 +529,27 @@ INNER JOIN [Products] AS [Product] ON ([Product].[Id] = [Orders].[ProductId]) WH
             };
             yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
         }
+        // Test 27
+        {
+            var testName = "Filter+WhitespaceHandling";
+            var tableName = "Products";
+            var tryToParseDates = true;
+            var odataQueryParams = new Dictionary<string, string>
+            {
+                {"filter", "Name in ('', '\"\"', '''', 'Value', ' ', '   ')" },
+            };
+            var expectedSQL = @"SELECT * FROM [Products] WHERE [Products].[Name] IN (@p0, @p1, @p2, @p3, @p4)";
+            var expectedSQLParams = new Dictionary<string, object>
+            {
+                {"@p0", ""},
+                {"@p1", "'"},
+                {"@p2", "Value"},
+                {"@p3", " "},
+                {"@p4", "   "},
+            };
+            yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
+        }
+
     }
 
     private static ODataToSqlConverter CreateODataToSqlConverter() => new(new TestsEdmModelBuilder(), new SqlServerCompiler() { UseLegacyPagination = false });
