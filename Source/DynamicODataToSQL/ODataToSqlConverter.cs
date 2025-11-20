@@ -72,7 +72,7 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
 
         var tableName = "RawSql";
         var query = new Query(tableName);
-        query = BuildSqlKataQueryFromOdataParameters(query, tableName, odataQuery, count, tryToParseDates);
+        query = BuildSqlKataQueryFromOdataParameters(query, tableName, odataQuery, count, tryToParseDates, false);
 
         query.WithRaw(tableName, rawSql);
 
@@ -92,10 +92,10 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
 
         var query = new Query(tableName);
 
-        return BuildSqlKataQueryFromOdataParameters(query, tableName, odataQuery, count, tryToParseDates);
+        return BuildSqlKataQueryFromOdataParameters(query, tableName, odataQuery, count, tryToParseDates, true);
     }
 
-    private Query BuildSqlKataQueryFromOdataParameters(Query query, string modelName, IDictionary<string, string> odataQuery, bool count, bool tryToParseDates)
+    private Query BuildSqlKataQueryFromOdataParameters(Query query, string modelName, IDictionary<string, string> odataQuery, bool count, bool tryToParseDates, bool allowNavigationProperties)
     {
         var (parser, model) = GetParser(modelName, odataQuery);
 
@@ -106,7 +106,7 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
         var orderbyClause = parser.ParseOrderBy();
         var selectClause = parser.ParseSelectAndExpand();
 
-        var columnNameResolver = new ColumnNameResolver(_sqlCompiler, modelName);
+        var columnNameResolver = new ColumnNameResolver(_sqlCompiler, modelName, model, allowNavigationProperties);
 
         if (applyClause != null)
         {
@@ -147,7 +147,7 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
 
             if (selectClause != null)
             {
-                query = BuildSelectClause(query, selectClause, modelName);
+                query = BuildSelectClause(query, selectClause, columnNameResolver);
             }
 
             query = new JoinClauseBuilder(columnNameResolver.NavigationProperties).BuildJoinClause(query, model, modelName);
@@ -197,15 +197,42 @@ public class ODataToSqlConverter(IEdmModelBuilder edmModelBuilder, Compiler sqlC
         return query;
     }
 
-    private static Query BuildSelectClause(Query query, SelectExpandClause selectClause, string tableName)
+    private static Query BuildSelectClause(Query query, SelectExpandClause selectClause, ColumnNameResolver columnNameResolver)
     {
-        if (!selectClause.AllSelected)
+        if (selectClause.AllSelected)
         {
-            foreach (var selectItem in selectClause.SelectedItems)
+            foreach (var property in columnNameResolver.GetColumnNames())
             {
-                if (selectItem is PathSelectItem path)
+                query = query.Select(property);
+            }
+        }
+        // If AllSelected is true, then only EXPAND clauses will be in this collection so we don't need to worry about duplicate selections.
+        foreach (var selectItem in selectClause.SelectedItems)
+        {
+            if (selectItem is PathSelectItem path)
+            {
+                var property = columnNameResolver.GetColumnName(path.SelectedPath.FirstSegment.Identifier);
+                query = query.Select(property);
+            }
+            else if (selectItem is ExpandedNavigationSelectItem expanded)
+            {
+                if (expanded.SelectAndExpand.AllSelected)
                 {
-                    query = query.Select($"{tableName}.{path.SelectedPath.FirstSegment.Identifier.Trim().Replace(SPACESIGNREPLACEMENT, " ")}");
+                    foreach (var property in columnNameResolver.GetColumnNames(expanded.NavigationSource.Name))
+                    {
+                        query = query.Select($"{property} AS {property}");
+                    }
+                }
+                else
+                {
+                    foreach (var expandedSelection in expanded.SelectAndExpand.SelectedItems)
+                    {
+                        if (expandedSelection is PathSelectItem expandedPath)
+                        {
+                            var property = columnNameResolver.GetColumnName(expanded.NavigationSource.Name, expandedPath.SelectedPath.FirstSegment.Identifier);
+                            query = query.Select($"{property} AS {property}");
+                        }
+                    }
                 }
             }
         }

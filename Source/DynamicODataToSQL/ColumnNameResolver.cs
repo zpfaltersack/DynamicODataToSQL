@@ -1,13 +1,18 @@
 namespace DynamicODataToSQL;
+
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Microsoft.OData.Edm;
 using Microsoft.OData.UriParser;
 
 using SqlKata.Compilers;
 
-public class ColumnNameResolver(Compiler compiler, string tableName)
+public class ColumnNameResolver(Compiler compiler, string tableName, IEdmModel model, bool useNamespacing)
 {
+    private IEdmEntityType EntityType { get; } = model.EntityContainer.FindEntitySet(tableName).EntityType();
+
     public HashSet<IEdmNavigationProperty> NavigationProperties { get; } = [];
 
     /// <param name="wrap">if true returned value will be wrapped in opening and closing column identifier</param>
@@ -51,6 +56,92 @@ public class ColumnNameResolver(Compiler compiler, string tableName)
             column = compiler.WrapValue(column);
         }
 
-        return $"{table}.{column}".Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ");
+        if (useNamespacing)
+        {
+            return $"{table}.{column}".Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ");
+        }
+        else
+        {
+            return column.Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ");
+        }
+    }
+
+    public string GetColumnName(string propertyName)
+    {
+        if (useNamespacing)
+        {
+            return $"{tableName}.{propertyName}".Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ");
+        }
+        else
+        {
+            return propertyName.Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ");
+        }
+    }
+
+    public string[] GetColumnNames()
+    {
+        var names = new List<string>();
+        foreach (var property in this.EntityType.DeclaredProperties)
+        {
+            if (property is EdmStructuralProperty structuralProperty)
+            {
+                if (useNamespacing)
+                {
+                    names.Add($"{tableName}.{structuralProperty.Name.Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ")}");
+                }
+                else
+                {
+                    names.Add(structuralProperty.Name.Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " "));
+                }
+            }
+        }
+        return names.ToArray();
+    }
+
+    public string GetColumnName(string navigationPropertyName, string propertyName)
+    {
+        if (!useNamespacing)
+        {
+            throw new InvalidOperationException("Navigation properties require namespacing.");
+        }
+
+        var navigationProperty = this.EntityType.DeclaredProperties.FirstOrDefault(p => p.Name == navigationPropertyName);
+        if (navigationProperty == null || navigationProperty is not IEdmNavigationProperty edmNavigationProperty)
+        {
+            throw new InvalidOperationException("Name is not a navigation property.");
+        }
+        this.NavigationProperties.Add(edmNavigationProperty);
+
+        var property = (navigationProperty.Type.Definition as IEdmEntityType).DeclaredProperties.FirstOrDefault(p => p.Name == propertyName);
+        if (property is not EdmStructuralProperty structuralProperty)
+        {
+            throw new InvalidOperationException("Only structural properties may be selected.");
+        }
+        return $"{navigationPropertyName}.{structuralProperty.Name.Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ")}";
+    }
+
+    public string[] GetColumnNames(string navigationPropertyName)
+    {
+        if (!useNamespacing)
+        {
+            throw new InvalidOperationException("Navigation properties require namespacing.");
+        }
+
+        var navigationProperty = this.EntityType.DeclaredProperties.FirstOrDefault(p => p.Name == navigationPropertyName);
+        if (navigationProperty == null || navigationProperty is not IEdmNavigationProperty edmNavigationProperty)
+        {
+            throw new InvalidOperationException("Name is not a navigation property.");
+        }
+        this.NavigationProperties.Add(edmNavigationProperty);
+
+        var names = new List<string>();
+        foreach (var property in (navigationProperty.Type.Definition as IEdmEntityType).DeclaredProperties)
+        {
+            if (property is EdmStructuralProperty structuralProperty)
+            {
+                names.Add($"{navigationPropertyName}.{structuralProperty.Name.Replace(ODataToSqlConverter.SPACESIGNREPLACEMENT, " ")}");
+            }
+        }
+        return names.ToArray();
     }
 }

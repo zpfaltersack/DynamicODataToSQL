@@ -549,6 +549,50 @@ INNER JOIN [Products] AS [Product] ON ([Product].[Id] = [Orders].[ProductId]) WH
             };
             yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
         }
+        // Test 28
+        {
+            var testName = "Expand+NavigationPropertyFunction";
+            var tableName = "Orders";
+            var tryToParseDates = true;
+            var odataQueryParams = new Dictionary<string, string>
+            {
+                {"select", "OrderId, Amount" },
+                {"expand", "Product($select=Name)" },
+            };
+            var expectedSQL = @"SELECT [Product].[Name] AS [Product.Name], [Orders].[OrderId], [Orders].[Amount] FROM [Orders] 
+INNER JOIN [Products] AS [Product] ON ([Product].[Id] = [Orders].[ProductId])";
+            var expectedSQLParams = new Dictionary<string, object>();
+            yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
+        }
+        // Test 29
+        {
+            var testName = "Expand+All+NavigationPropertyFunction";
+            var tableName = "Orders";
+            var tryToParseDates = true;
+            var odataQueryParams = new Dictionary<string, string>
+            {
+                {"select", "OrderId, Amount" },
+                {"expand", "Product" },
+            };
+            var expectedSQL = @"SELECT [Product].[Id] AS [Product.Id], [Product].[Name] AS [Product.Name], [Product].[Type] AS [Product.Type], [Product].[TotalInventory] AS [Product.TotalInventory], [Product].[TimeCreated] AS [Product.TimeCreated], [Product].[Origin] AS [Product.Origin], [Product].[Spaced Column] AS [Product.Spaced Column], [Orders].[OrderId], [Orders].[Amount] FROM [Orders] 
+INNER JOIN [Products] AS [Product] ON ([Product].[Id] = [Orders].[ProductId])";
+            var expectedSQLParams = new Dictionary<string, object>();
+            yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
+        }
+        // Test 29
+        {
+            var testName = "Expand+NoSelect+NavigationPropertyFunction";
+            var tableName = "Orders";
+            var tryToParseDates = true;
+            var odataQueryParams = new Dictionary<string, string>
+            {
+                {"expand", "Product" },
+            };
+            var expectedSQL = @"SELECT [Orders].[OrderId], [Orders].[TotalAmount], [Orders].[Country], [Orders].[Amount], [Orders].[OrderDate], [Orders].[value], [Orders].[ProductId], [Product].[Id] AS [Product.Id], [Product].[Name] AS [Product.Name], [Product].[Type] AS [Product.Type], [Product].[TotalInventory] AS [Product.TotalInventory], [Product].[TimeCreated] AS [Product.TimeCreated], [Product].[Origin] AS [Product.Origin], [Product].[Spaced Column] AS [Product.Spaced Column] FROM [Orders] 
+INNER JOIN [Products] AS [Product] ON ([Product].[Id] = [Orders].[ProductId])";
+            var expectedSQLParams = new Dictionary<string, object>();
+            yield return new object[] { testName, tableName, tryToParseDates, odataQueryParams, false, expectedSQL, expectedSQLParams };
+        }
 
     }
 
